@@ -141,9 +141,9 @@
       <div class="param"><label>n (sharpness)</label>
         <input type="range" id="alphaN" min="1" max="8" step="1" value="3">
         <span class="val" id="alphaN-v">3</span></div>
-      <div class="param"><label>Step size</label>
-        <input type="range" id="flowScale" min="0.1" max="3.0" step="0.1" value="1.0">
-        <span class="val" id="flowScale-v">1.0</span></div>
+      <div class="param"><label>Flow scale</label>
+        <input type="range" id="flowScale" min="0.5" max="20.0" step="0.5" value="5.0">
+        <span class="val" id="flowScale-v">5.0</span></div>
     </div>
 
     <div class="group">
@@ -364,10 +364,10 @@ function simStep() {
       const dAdx = (A[y * N + xp] - A[y * N + xm]) * 0.5;
       const dAdy = (A[yp * N + x] - A[ym * N + x]) * 0.5;
 
-      // Concentration-dependent alpha
+      // Concentration-dependent alpha (paper formula: clamp((A/θ)^n, 0, 1))
       const aNorm = A[idx] / thetaA;
-      let alpha = 1 - 1 / (1 + Math.pow(aNorm, alphaN));
-      alpha = Math.max(0, Math.min(1, alpha));
+      let alpha = Math.min(1, Math.pow(aNorm, alphaN));
+      alpha = Math.max(0, alpha);
 
       // Flow: toward affinity, away from concentration
       Fx[idx] = flowScale * ((1 - alpha) * dUdx - alpha * dAdx);
@@ -536,7 +536,7 @@ function render() {
 // --- Presets ---
 const PRESETS = {
   orbium: {
-    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.30, alphaN: 3, flowScale: 1.0 },
+    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.30, alphaN: 3, flowScale: 5.0 },
     seed: function() {
       // Single Orbium-like organism at center
       const cx = N / 2, cy = N / 2;
@@ -556,7 +556,7 @@ const PRESETS = {
     }
   },
   dual: {
-    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.25, alphaN: 3, flowScale: 1.0 },
+    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.25, alphaN: 3, flowScale: 5.0 },
     seed: function() {
       // Two organisms with different growth parameters
       const cx = N / 2, cy = N / 2;
@@ -581,7 +581,7 @@ const PRESETS = {
     }
   },
   soup: {
-    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.20, alphaN: 3, flowScale: 1.0 },
+    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.20, alphaN: 3, flowScale: 5.0 },
     seed: function() {
       // Random matter with random parameters
       for (let i = 0; i < N * N; i++) {
@@ -598,7 +598,7 @@ const PRESETS = {
     }
   },
   colonize: {
-    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.25, alphaN: 3, flowScale: 1.2, mutRate: 0.002 },
+    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.25, alphaN: 3, flowScale: 5.0, mutRate: 0.002 },
     seed: function() {
       // One organism with mutations enabled — watch it speciate
       const cx = N / 2, cy = N / 2;
