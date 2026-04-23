@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flow-Lenia — Mass-Conservative Artificial Life</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0c;
+    color: #d4d0c8;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  #header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: #12121a;
+    border-bottom: 1px solid #2a2a3a;
+    z-index: 10;
+  }
+  #header h1 { font-size: 14px; font-weight: 400; color: #c49a6c; letter-spacing: 2px; }
+  #header .stats { font-size: 11px; color: #666; }
+  #header .stats span { margin-left: 8px; }
+  #main { display: flex; flex: 1; overflow: hidden; }
+  #canvas-wrap {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  canvas { image-rendering: pixelated; cursor: crosshair; }
+  #panel {
+    width: 280px; background: #12121a; border-left: 1px solid #2a2a3a;
+    padding: 12px; overflow-y: auto; font-size: 12px;
+  }
+  .group { margin-bottom: 14px; }
+  .group-title {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: #666; margin-bottom: 6px;
+  }
+  .param { display: flex; align-items: center; margin-bottom: 4px; }
+  .param label { width: 80px; color: #888; font-size: 11px; }
+  .param input[type="range"] { flex: 1; accent-color: #c49a6c; height: 3px; }
+  .param .val { width: 50px; text-align: right; color: #c49a6c; font-size: 11px; }
+  .btn-row { display: flex; gap: 4px; margin-bottom: 10px; }
+  button {
+    flex: 1; padding: 5px 8px; background: #1a1a2a; color: #d4d0c8;
+    border: 1px solid #2a2a3a; border-radius: 4px; font-family: inherit;
+    font-size: 11px; cursor: pointer;
+  }
+  button:hover { background: #2a2a3a; }
+  button.active { background: #2a1a0a; border-color: #c49a6c; color: #c49a6c; }
+  select {
+    width: 100%; padding: 5px 8px; background: #1a1a2a; color: #d4d0c8;
+    border: 1px solid #2a2a3a; border-radius: 4px; font-family: inherit;
+    font-size: 11px;
+  }
+  .info {
+    font-size: 10px; color: #555; line-height: 1.5; margin-top: 10px;
+    border-top: 1px solid #2a2a3a; padding-top: 10px;
+  }
+  a { color: #c49a6c; }
+  .mass-bar {
+    height: 4px; background: #1a1a2a; border-radius: 2px; margin-top: 4px;
+    overflow: hidden;
+  }
+  .mass-bar-fill { height: 100%; background: #c49a6c; border-radius: 2px; transition: width 0.3s; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>🪶 FLOW-LENIA</h1>
+  <div class="stats">
+    <span id="fps">0 fps</span>
+    <span id="step">step 0</span>
+    <span id="pop">pop 0</span>
+    <span id="mass">mass 0</span>
+  </div>
+</div>
+
+<div id="main">
+  <div id="canvas-wrap"><canvas id="c"></canvas></div>
+  <div id="panel">
+    <div class="btn-row">
+      <button id="bPlay" class="active">▶ Play</button>
+      <button id="bPause">⏸ Pause</button>
+      <button id="bStep">⏭ Step</button>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Preset</div>
+      <select id="preset">
+        <option value="orbium">Single Species (Orbium)</option>
+        <option value="dual">Dual Species</option>
+        <option value="soup">Random Soup</option>
+        <option value="colonize">Colonization</option>
+      </select>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Render Mode</div>
+      <select id="renderMode">
+        <option value="matter">Matter Density</option>
+        <option value="species">Species Map</option>
+      </select>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Kernel Ring</div>
+      <div class="param"><label>R</label>
+        <input type="range" id="R" min="4" max="20" step="1" value="13">
+        <span class="val" id="R-v">13</span></div>
+      <div class="param"><label>β₁ (ring)</label>
+        <input type="range" id="b1" min="0.1" max="0.9" step="0.01" value="0.50">
+        <span class="val" id="b1-v">0.50</span></div>
+      <div class="param"><label>β₂ (width)</label>
+        <input type="range" id="b2" min="0.02" max="0.3" step="0.01" value="0.15">
+        <span class="val" id="b2-v">0.15</span></div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Growth (base values)</div>
+      <div class="param"><label>μ grow</label>
+        <input type="range" id="mg" min="0.01" max="0.4" step="0.005" value="0.150">
+        <span class="val" id="mg-v">0.150</span></div>
+      <div class="param"><label>σ grow</label>
+        <input type="range" id="sg" min="0.003" max="0.08" step="0.001" value="0.015">
+        <span class="val" id="sg-v">0.015</span></div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Flow Dynamics</div>
+      <div class="param"><label>θ_A (thresh)</label>
+        <input type="range" id="thetaA" min="0.01" max="2.0" step="0.01" value="0.30">
+        <span class="val" id="thetaA-v">0.30</span></div>
+      <div class="param"><label>n (sharpness)</label>
+        <input type="range" id="alphaN" min="1" max="8" step="1" value="3">
+        <span class="val" id="alphaN-v">3</span></div>
+      <div class="param"><label>Step size</label>
+        <input type="range" id="flowScale" min="0.1" max="3.0" step="0.1" value="1.0">
+        <span class="val" id="flowScale-v">1.0</span></div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Simulation</div>
+      <div class="param"><label>Steps/frame</label>
+        <input type="range" id="spf" min="1" max="8" step="1" value="2">
+        <span class="val" id="spf-v">2</span></div>
+      <div class="param"><label>Mutations</label>
+        <input type="range" id="mutRate" min="0" max="0.05" step="0.001" value="0.000">
+        <span class="val" id="mutRate-v">0.000</span></div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Brush</div>
+      <div class="param"><label>Radius</label>
+        <input type="range" id="br" min="1" max="25" step="1" value="6">
+        <span class="val" id="br-v">6</span></div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Mass Conservation</div>
+      <div class="mass-bar"><div class="mass-bar-fill" id="massBar" style="width: 100%"></div></div>
+      <div style="font-size:10px;color:#555;margin-top:2px">
+        Initial: <span id="massInit">0</span> · Current: <span id="massCur">0</span>
+      </div>
+    </div>
+
+    <div class="info">
+      <b>Flow-Lenia</b> — mass-conservative continuous CA<br>
+      Plantec et al. 2022, extended by Kestrel<br><br>
+      Matter flows toward high-affinity regions,<br>
+      disperses from high concentration.<br>
+      Each cell carries its own growth parameters<br>
+      (μ, σ), creating emergent species.<br><br>
+      Click to inject matter. Shift+click to<br>
+      inject with different parameters.<br><br>
+      <a href="https://arxiv.org/abs/2212.07906">arXiv:2212.07906</a>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Flow-Lenia — Mass-Conservative Artificial Life
+// Kestrel's implementation · April 2026
+//
+// The core insight: mass conservation + parameter localization
+// transforms Lenia from a pattern generator into a genuine
+// artificial life platform where organisms compete for resources
+// and maintain their own dynamics through heritable parameters.
+//
+// Update rule:
+//   1. Convolution:    n(x,y) = Σ A(x+dx,y+dy) · K(‖d‖/R)
+//   2. Affinity:       U(x,y) = G(n; μ_local, σ_local)
+//   3. Flow:           α = clamp((A/θ_A)^n, 0, 1)
+//                      F = (1-α)·∇U - α·∇A
+//   4. Reintegration:  bilinear distribution along F
+//   5. Parameters:     carried with matter, mixed at destination
+// ============================================================
+
+const SZ = 200; // grid resolution
+const N = SZ;
+
+const cv = document.getElementById('c');
+const cx = cv.getContext('2d');
+cv.width = N; cv.height = N;
+
+// --- State ---
+let A     = new Float32Array(N * N);  // matter density (≥ 0, NOT clamped to 1)
+let P_mu  = new Float32Array(N * N);  // local growth mean
+let P_sg  = new Float32Array(N * N);  // local growth width
+let U     = new Float32Array(N * N);  // affinity map
+let Fx    = new Float32Array(N * N);  // flow x-component
+let Fy    = new Float32Array(N * N);  // flow y-component
+
+// Scratch space for reintegration
+let A_new    = new Float32Array(N * N);
+let Pmu_new  = new Float32Array(N * N);
+let Psg_new  = new Float32Array(N * N);
+let Wt_new   = new Float32Array(N * N); // weight total for parameter mixing
+
+let img = cx.createImageData(N, N);
+
+// Kernel: pre-computed sparse offsets with weights
+let kernOffsets = [];
+let kernDirty = true;
+
+// Mass tracking
+let initialMass = 0;
+
+// Auto-exposure for rendering
+let exposureMax = 1.0;
+const EXPOSURE_SMOOTH = 0.95; // smooth adaptation
+
+// --- Colormap ---
+const LUT_R = new Uint8Array(256);
+const LUT_G = new Uint8Array(256);
+const LUT_B = new Uint8Array(256);
+
+function buildLUT() {
+  for (let i = 0; i < 256; i++) {
+    const v = i / 255;
+    if (v < 0.01) {
+      LUT_R[i] = 10; LUT_G[i] = 10; LUT_B[i] = 14;
+    } else {
+      // Warm copper-amber palette
+      LUT_R[i] = Math.min(255, Math.floor(30 + v * 225));
+      LUT_G[i] = Math.min(255, Math.floor(
+        v < 0.3 ? v / 0.3 * 100 :
+        v < 0.7 ? 100 + (v - 0.3) / 0.4 * 70 :
+        170 + (v - 0.7) / 0.3 * 60
+      ));
+      LUT_B[i] = Math.min(255, Math.floor(
+        v < 0.4 ? v / 0.4 * 35 : 35 + (v - 0.4) / 0.6 * 30
+      ));
+    }
+  }
+}
+buildLUT();
+
+// --- Helpers ---
+function val(id) { return parseFloat(document.getElementById(id).value); }
+function ival(id) { return Math.round(val(id)); }
+
+function updateVals() {
+  for (const id of ['R','b1','b2','mg','sg','thetaA','alphaN','flowScale','spf','br','mutRate']) {
+    const el = document.getElementById(id);
+    const v = document.getElementById(id + '-v');
+    if (el && v) {
+      const step = parseFloat(el.step);
+      const decimals = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0;
+      v.textContent = parseFloat(el.value).toFixed(decimals);
+    }
+  }
+}
+
+function applyParams(p) {
+  for (const [k, v] of Object.entries(p)) {
+    const el = document.getElementById(k);
+    if (el) el.value = v;
+  }
+  kernDirty = true;
+  updateVals();
+}
+
+// --- Kernel ---
+function rebuildKernel() {
+  const R = ival('R');
+  const b1 = val('b1');
+  const b2 = val('b2');
+  kernOffsets = [];
+  let sum = 0;
+  const tmp = [];
+
+  for (let dy = -R; dy <= R; dy++) {
+    for (let dx = -R; dx <= R; dx++) {
+      const d = Math.sqrt(dy * dy + dx * dx) / R;
+      if (d > 1.0) continue;
+      const w = Math.exp(-((d - b1) ** 2) / (2 * b2 * b2));
+      if (w < 0.001) continue;
+      tmp.push({ dy, dx, w });
+      sum += w;
+    }
+  }
+
+  for (const t of tmp) {
+    kernOffsets.push({ dy: t.dy, dx: t.dx, w: t.w / sum });
+  }
+  kernDirty = false;
+}
+
+// --- Simulation Step ---
+function simStep() {
+  if (kernDirty) rebuildKernel();
+
+  const thetaA = val('thetaA');
+  const alphaN = val('alphaN');
+  const flowScale = val('flowScale');
+  const mutRate = val('mutRate');
+
+  // Phase 1: Convolution + Affinity
+  // For each cell, compute convolution n(x,y) and evaluate
+  // the growth function with LOCAL parameters
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const idx = y * N + x;
+      const mu = P_mu[idx];
+      const sg = P_sg[idx];
+      const inv2sg2 = 1 / (2 * sg * sg);
+
+      let conv = 0;
+      for (let k = 0; k < kernOffsets.length; k++) {
+        const o = kernOffsets[k];
+        const ny = (y + o.dy + N) % N;
+        const nx = (x + o.dx + N) % N;
+        conv += A[ny * N + nx] * o.w;
+      }
+
+      // Affinity: Gaussian growth function with local params
+      U[idx] = 2 * Math.exp(-((conv - mu) ** 2) * inv2sg2) - 1;
+    }
+  }
+
+  // Phase 2: Flow computation
+  // F(x,y) = (1-α)·∇U - α·∇A
+  // α(x,y) = clamp((A(x,y) / θ_A)^n, 0, 1)
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const idx = y * N + x;
+      const xp = (x + 1) % N, xm = (x - 1 + N) % N;
+      const yp = (y + 1) % N, ym = (y - 1 + N) % N;
+
+      // Gradient of affinity
+      const dUdx = (U[y * N + xp] - U[y * N + xm]) * 0.5;
+      const dUdy = (U[yp * N + x] - U[ym * N + x]) * 0.5;
+
+      // Gradient of concentration
+      const dAdx = (A[y * N + xp] - A[y * N + xm]) * 0.5;
+      const dAdy = (A[yp * N + x] - A[ym * N + x]) * 0.5;
+
+      // Concentration-dependent alpha
+      const aNorm = A[idx] / thetaA;
+      let alpha = 1 - 1 / (1 + Math.pow(aNorm, alphaN));
+      alpha = Math.max(0, Math.min(1, alpha));
+
+      // Flow: toward affinity, away from concentration
+      Fx[idx] = flowScale * ((1 - alpha) * dUdx - alpha * dAdx);
+      Fy[idx] = flowScale * ((1 - alpha) * dUdy - alpha * dAdy);
+    }
+  }
+
+  // Phase 3: Reintegration + Parameter Transport
+  // Each cell distributes its matter (and parameters) along the flow
+  // using bilinear interpolation. Mass conservation is by construction.
+  A_new.fill(0);
+  Pmu_new.fill(0);
+  Psg_new.fill(0);
+  Wt_new.fill(0);
+
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const idx = y * N + x;
+      const matter = A[idx];
+      if (matter < 1e-12) continue;
+
+      // Target position
+      const tx = x + Fx[idx];
+      const ty = y + Fy[idx];
+
+      // Bilinear distribution to 4 nearest cells
+      const ix = Math.floor(tx);
+      const iy = Math.floor(ty);
+      const fx = tx - ix;
+      const fy = ty - iy;
+
+      // 4 corners with bilinear weights
+      const w00 = (1 - fx) * (1 - fy);
+      const w10 = fx * (1 - fy);
+      const w01 = (1 - fx) * fy;
+      const w11 = fx * fy;
+
+      const corners = [
+        { dx: 0, dy: 0, w: w00 },
+        { dx: 1, dy: 0, w: w10 },
+        { dx: 0, dy: 1, w: w01 },
+        { dx: 1, dy: 1, w: w11 },
+      ];
+
+      const mu_src = P_mu[idx];
+      const sg_src = P_sg[idx];
+
+      for (const c of corners) {
+        const nx = ((ix + c.dx) % N + N) % N;
+        const ny = ((iy + c.dy) % N + N) % N;
+        const ni = ny * N + nx;
+        const w = c.w;
+        const m = matter * w;
+
+        A_new[ni] += m;
+        Pmu_new[ni] += mu_src * m;
+        Psg_new[ni] += sg_src * m;
+        Wt_new[ni] += m;
+      }
+    }
+  }
+
+  // Phase 4: Normalize parameters (weighted average mixing)
+  // Apply mutations if enabled
+  for (let i = 0; i < N * N; i++) {
+    if (Wt_new[i] > 1e-12) {
+      P_mu[i] = Pmu_new[i] / Wt_new[i];
+      P_sg[i] = Psg_new[i] / Wt_new[i];
+    }
+    // else: keep previous parameters (empty cell retains memory)
+
+    A[i] = A_new[i];
+
+    // Mutations: inject random parameter noise
+    if (mutRate > 0 && A[i] > 0.01 && Math.random() < mutRate) {
+      P_mu[i] += (Math.random() - 0.5) * 0.02;
+      P_sg[i] += (Math.random() - 0.5) * 0.002;
+      // Clamp to reasonable ranges
+      P_mu[i] = Math.max(0.01, Math.min(0.4, P_mu[i]));
+      P_sg[i] = Math.max(0.003, Math.min(0.08, P_sg[i]));
+    }
+  }
+}
+
+// --- Rendering ---
+function render() {
+  const mode = document.getElementById('renderMode').value;
+  const d = img.data;
+
+  // Auto-exposure: find max density with smoothing
+  let maxA = 0.01;
+  let pop = 0;
+  let totalMass = 0;
+  for (let i = 0; i < N * N; i++) {
+    if (A[i] > maxA) maxA = A[i];
+    if (A[i] > 0.01) pop++;
+    totalMass += A[i];
+  }
+
+  // Smooth exposure adaptation
+  exposureMax = EXPOSURE_SMOOTH * exposureMax + (1 - EXPOSURE_SMOOTH) * maxA;
+  const invMax = 1.0 / Math.max(0.01, exposureMax);
+
+  if (mode === 'matter') {
+    // Copper-amber density rendering
+    for (let i = 0, j = 0; i < N * N; i++, j += 4) {
+      const v = Math.min(1, A[i] * invMax);
+      const idx = Math.min(255, Math.max(0, (v * 255) | 0));
+      d[j]     = LUT_R[idx];
+      d[j + 1] = LUT_G[idx];
+      d[j + 2] = LUT_B[idx];
+      d[j + 3] = 255;
+    }
+  } else {
+    // Species map: hue encodes μ, brightness encodes density
+    for (let i = 0, j = 0; i < N * N; i++, j += 4) {
+      const v = Math.min(1, A[i] * invMax);
+      if (v < 0.01) {
+        d[j] = 10; d[j+1] = 10; d[j+2] = 14; d[j+3] = 255;
+        continue;
+      }
+      // Map μ to hue (0.01–0.4 → 0°–300°)
+      const mu_norm = Math.max(0, Math.min(1, (P_mu[i] - 0.01) / 0.39));
+      const sg_norm = Math.max(0, Math.min(1, (P_sg[i] - 0.003) / 0.077));
+      const hue = mu_norm * 300;
+      const sat = 0.5 + sg_norm * 0.5;
+      const lit = 0.1 + v * 0.6;
+
+      // HSL to RGB
+      const c = (1 - Math.abs(2 * lit - 1)) * sat;
+      const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+      const m = lit - c / 2;
+      let r = 0, g = 0, b = 0;
+      if (hue < 60) { r = c; g = x; }
+      else if (hue < 120) { r = x; g = c; }
+      else if (hue < 180) { g = c; b = x; }
+      else if (hue < 240) { g = x; b = c; }
+      else if (hue < 300) { b = c; r = x; }
+      else { b = x; r = c; }
+
+      d[j]     = Math.min(255, Math.max(0, ((r + m) * 255) | 0));
+      d[j + 1] = Math.min(255, Math.max(0, ((g + m) * 255) | 0));
+      d[j + 2] = Math.min(255, Math.max(0, ((b + m) * 255) | 0));
+      d[j + 3] = 255;
+    }
+  }
+
+  cx.putImageData(img, 0, 0);
+
+  // Scale canvas to fit
+  const wrap = document.getElementById('canvas-wrap');
+  const sz = Math.min(wrap.clientWidth - 20, wrap.clientHeight - 20);
+  cv.style.width = sz + 'px';
+  cv.style.height = sz + 'px';
+
+  // Update stats
+  document.getElementById('pop').textContent = 'pop ' + pop;
+  document.getElementById('mass').textContent = 'mass ' + totalMass.toFixed(1);
+  document.getElementById('massInit').textContent = initialMass.toFixed(1);
+  document.getElementById('massCur').textContent = totalMass.toFixed(1);
+
+  const massPct = initialMass > 0 ? Math.min(100, (totalMass / initialMass) * 100) : 0;
+  document.getElementById('massBar').style.width = massPct + '%';
+}
+
+// --- Presets ---
+const PRESETS = {
+  orbium: {
+    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.30, alphaN: 3, flowScale: 1.0 },
+    seed: function() {
+      // Single Orbium-like organism at center
+      const cx = N / 2, cy = N / 2;
+      const mu = val('mg'), sg = val('sg');
+      for (let y = cy - 10; y <= cy + 10; y++) {
+        for (let x = cx - 10; x <= cx + 10; x++) {
+          const dx = (x - cx) / 8, dy = (y - cy) / 8;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < 1) {
+            const idx = ((y + N) % N) * N + ((x + N) % N);
+            A[idx] = Math.max(0, 1 - d2);
+            P_mu[idx] = mu;
+            P_sg[idx] = sg;
+          }
+        }
+      }
+    }
+  },
+  dual: {
+    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.25, alphaN: 3, flowScale: 1.0 },
+    seed: function() {
+      // Two organisms with different growth parameters
+      const cx = N / 2, cy = N / 2;
+      const specs = [
+        { x: cx - 12, y: cy, mu: 0.150, sg: 0.015, label: 'Species A' },
+        { x: cx + 12, y: cy, mu: 0.200, sg: 0.025, label: 'Species B' },
+      ];
+      for (const sp of specs) {
+        for (let y = sp.y - 8; y <= sp.y + 8; y++) {
+          for (let x = sp.x - 8; x <= sp.x + 8; x++) {
+            const dx = (x - sp.x) / 6, dy = (y - sp.y) / 6;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < 1) {
+              const idx = ((y + N) % N) * N + ((x + N) % N);
+              A[idx] = Math.max(0, 1 - d2);
+              P_mu[idx] = sp.mu;
+              P_sg[idx] = sp.sg;
+            }
+          }
+        }
+      }
+    }
+  },
+  soup: {
+    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.20, alphaN: 3, flowScale: 1.0 },
+    seed: function() {
+      // Random matter with random parameters
+      for (let i = 0; i < N * N; i++) {
+        if (Math.random() < 0.12) {
+          A[i] = Math.random() * 0.8;
+          P_mu[i] = 0.1 + Math.random() * 0.2;
+          P_sg[i] = 0.008 + Math.random() * 0.03;
+        } else {
+          A[i] = 0;
+          P_mu[i] = val('mg');
+          P_sg[i] = val('sg');
+        }
+      }
+    }
+  },
+  colonize: {
+    params: { R: 13, b1: 0.50, b2: 0.15, mg: 0.150, sg: 0.015, thetaA: 0.25, alphaN: 3, flowScale: 1.2, mutRate: 0.002 },
+    seed: function() {
+      // One organism with mutations enabled — watch it speciate
+      const cx = N / 2, cy = N / 2;
+      const mu = val('mg'), sg = val('sg');
+      // Larger initial organism
+      for (let y = cy - 15; y <= cy + 15; y++) {
+        for (let x = cx - 15; x <= cx + 15; x++) {
+          const dx = (x - cx) / 12, dy = (y - cy) / 12;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < 1) {
+            const idx = ((y + N) % N) * N + ((x + N) % N);
+            A[idx] = Math.max(0, 1 - d2);
+            P_mu[idx] = mu + (Math.random() - 0.5) * 0.01;
+            P_sg[idx] = sg + (Math.random() - 0.5) * 0.002;
+          }
+        }
+      }
+    }
+  }
+};
+
+function initPreset(name) {
+  // Clear state
+  A.fill(0);
+  P_mu.fill(val('mg'));
+  P_sg.fill(val('sg'));
+  exposureMax = 1.0;
+
+  const preset = PRESETS[name];
+  if (preset) {
+    applyParams(preset.params);
+    preset.seed();
+  }
+
+  // Track initial mass
+  initialMass = 0;
+  for (let i = 0; i < N * N; i++) initialMass += A[i];
+}
+
+// --- Brush ---
+let painting = false;
+let shiftHeld = false;
+
+function paint(ex, ey) {
+  const radius = ival('br');
+  const sx = N / cv.clientWidth;
+  const sy = N / cv.clientHeight;
+  const gx = Math.floor(ex * sx);
+  const gy = Math.floor(ey * sy);
+
+  // Brush injects with current slider params, or shifted params
+  const brushMu = shiftHeld ? val('mg') * (0.8 + Math.random() * 0.4) : val('mg');
+  const brushSg = shiftHeld ? val('sg') * (0.8 + Math.random() * 0.4) : val('sg');
+
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > radius) continue;
+      const x = (gx + dx + N) % N;
+      const y = (gy + dy + N) % N;
+      const idx = y * N + x;
+      const amount = Math.max(0, 1 - d / radius);
+      A[idx] = Math.max(A[idx], amount); // Use max to not displace existing matter
+      if (amount > 0.3) {
+        P_mu[idx] = P_mu[idx] * (1 - amount) + brushMu * amount;
+        P_sg[idx] = P_sg[idx] * (1 - amount) + brushSg * amount;
+      }
+    }
+  }
+
+  // Update initial mass tracking (user added matter)
+  let newMass = 0;
+  for (let i = 0; i < N * N; i++) newMass += A[i];
+  initialMass = newMass;
+}
+
+cv.addEventListener('mousedown', e => { painting = true; paint(e.offsetX, e.offsetY); });
+cv.addEventListener('mousemove', e => { if (painting) paint(e.offsetX, e.offsetY); });
+cv.addEventListener('mouseup', () => painting = false);
+cv.addEventListener('mouseleave', () => painting = false);
+
+// Touch support
+cv.addEventListener('touchstart', e => {
+  e.preventDefault(); painting = true;
+  const t = e.touches[0], rect = cv.getBoundingClientRect();
+  paint(t.clientX - rect.left, t.clientY - rect.top);
+});
+cv.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0], rect = cv.getBoundingClientRect();
+  paint(t.clientX - rect.left, t.clientY - rect.top);
+});
+cv.addEventListener('touchend', () => painting = false);
+
+// Shift key tracking
+document.addEventListener('keydown', e => { if (e.key === 'Shift') shiftHeld = true; });
+document.addEventListener('keyup', e => { if (e.key === 'Shift') shiftHeld = false; });
+
+// --- Controls ---
+let running = true;
+let stepN = 0;
+
+document.getElementById('bPlay').addEventListener('click', function() {
+  running = true; this.classList.add('active');
+  document.getElementById('bPause').classList.remove('active');
+});
+document.getElementById('bPause').addEventListener('click', function() {
+  running = false; this.classList.add('active');
+  document.getElementById('bPlay').classList.remove('active');
+});
+document.getElementById('bStep').addEventListener('click', () => { simStep(); render(); stepN++; });
+document.getElementById('preset').addEventListener('change', function() {
+  initPreset(this.value); stepN = 0; render();
+});
+document.querySelectorAll('input[type="range"]').forEach(el => {
+  el.addEventListener('input', () => {
+    kernDirty = true;
+    updateVals();
+  });
+});
+
+// --- Main Loop ---
+let fCount = 0, fTime = performance.now();
+
+function loop() {
+  if (running) {
+    const spf = Math.round(val('spf'));
+    for (let i = 0; i < spf; i++) {
+      simStep();
+      stepN++;
+    }
+    render();
+  }
+
+  fCount++;
+  const now = performance.now();
+  if (now - fTime >= 1000) {
+    document.getElementById('fps').textContent = fCount + ' fps';
+    document.getElementById('step').textContent = 'step ' + stepN;
+    fCount = 0;
+    fTime = now;
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// --- Boot ---
+initPreset('orbium');
+updateVals();
+render();
+loop();
+</script>
+</body>
+</html>
