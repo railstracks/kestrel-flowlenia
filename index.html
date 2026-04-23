@@ -80,6 +80,7 @@
     <span id="step">step 0</span>
     <span id="pop">pop 0</span>
     <span id="mass">mass 0</span>
+    <span id="fmax">flow 0</span>
   </div>
 </div>
 
@@ -526,6 +527,14 @@ function render() {
   // Update stats
   document.getElementById('pop').textContent = 'pop ' + pop;
   document.getElementById('mass').textContent = 'mass ' + totalMass.toFixed(1);
+
+  // Flow magnitude diagnostic
+  let maxFlow = 0;
+  for (let i = 0; i < N * N; i++) {
+    const fm = Math.sqrt(Fx[i]*Fx[i] + Fy[i]*Fy[i]);
+    if (fm > maxFlow) maxFlow = fm;
+  }
+  document.getElementById('fmax').textContent = 'flow ' + maxFlow.toFixed(3);
   document.getElementById('massInit').textContent = initialMass.toFixed(1);
   document.getElementById('massCur').textContent = totalMass.toFixed(1);
 
