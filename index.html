@@ -69,6 +69,15 @@
     overflow: hidden;
   }
   .mass-bar-fill { height: 100%; background: #c49a6c; border-radius: 2px; transition: width 0.3s; }
+#eco-panel {
+  border-top: 1px solid #2a2a3a; margin-top: 10px; padding-top: 8px;
+}
+#eco-panel .group-title { margin-bottom: 4px; }
+#ecoChart {
+  width: 100%; height: 80px; background: #0a0a0c;
+  border: 1px solid #2a2a3a; border-radius: 4px;
+}
+#ecoStats { font-size: 10px; color: #666; margin-top: 4px; line-height: 1.4; }
 </style>
 </head>
 <body>
@@ -183,6 +192,16 @@
       inject with different parameters.<br><br>
       <a href="https://arxiv.org/abs/2212.07906">arXiv:2212.07906</a>
     </div>
+
+    <div id="eco-panel">
+      <div class="group-title">Ecosystem Dynamics</div>
+      <canvas id="ecoChart"></canvas>
+      <div id="ecoStats">
+        <span style="color:#c49a6c">■</span> Species count · 
+        <span style="color:#5a9e8f">■</span> Shannon diversity · 
+        <span style="color:rgba(196,154,108,0.5)">■</span> Total mass
+      </div>
+    </div>
   </div>
 </div>
 
@@ -234,6 +253,130 @@ let kernDirty = true;
 
 // Mass tracking
 let initialMass = 0;
+
+// Ecosystem dynamics tracking
+const ECO_HISTORY = 300; // frames of history
+let ecoMassHist = new Float32Array(ECO_HISTORY);    // total mass over time
+let ecoSpeciesHist = new Float32Array(ECO_HISTORY);  // species count over time
+let ecoDivHist = new Float32Array(ECO_HISTORY);      // Shannon diversity
+let ecoIdx = 0;
+let ecoFilled = false;
+
+// Species detection: bin cells by μ into histogram, count peaks
+const MU_BINS = 40; // bins over [0.01, 0.4]
+const MU_MIN = 0.01, MU_MAX = 0.4;
+const MU_RANGE = MU_MAX - MU_MIN;
+let speciesBins = new Float32Array(MU_BINS);
+
+function detectSpecies() {
+  speciesBins.fill(0);
+  for (let i = 0; i < N * N; i++) {
+    if (A[i] < 0.02) continue;
+    const bin = Math.floor((P_mu[i] - MU_MIN) / MU_RANGE * MU_BINS);
+    if (bin >= 0 && bin < MU_BINS) {
+      speciesBins[bin] += A[i]; // mass-weighted
+    }
+  }
+  // Count peaks: bins significantly above neighbors
+  const threshold = initialMass * 0.005; // 0.5% of total mass
+  let speciesCount = 0;
+  let entropy = 0;
+  let totalBinMass = 0;
+  for (let b = 1; b < MU_BINS - 1; b++) {
+    if (speciesBins[b] > threshold &&
+        speciesBins[b] > speciesBins[b-1] &&
+        speciesBins[b] >= speciesBins[b+1]) {
+      speciesCount++;
+    }
+    totalBinMass += speciesBins[b];
+  }
+  // Shannon diversity
+  if (totalBinMass > 0) {
+    for (let b = 0; b < MU_BINS; b++) {
+      if (speciesBins[b] > 0) {
+        const p = speciesBins[b] / totalBinMass;
+        entropy -= p * Math.log(p);
+      }
+    }
+  }
+  return { speciesCount, entropy };
+}
+
+function recordEco() {
+  let totalMass = 0;
+  for (let i = 0; i < N * N; i++) totalMass += A[i];
+  const { speciesCount, entropy } = detectSpecies();
+  ecoMassHist[ecoIdx] = totalMass;
+  ecoSpeciesHist[ecoIdx] = speciesCount;
+  ecoDivHist[ecoIdx] = entropy;
+  ecoIdx = (ecoIdx + 1) % ECO_HISTORY;
+  if (ecoIdx === 0) ecoFilled = true;
+}
+
+function renderEcoChart() {
+  const ecv = document.getElementById('ecoChart');
+  const ecx = ecv.getContext('2d');
+  const W = ecv.clientWidth, H = ecv.clientHeight;
+  ecv.width = W; ecv.height = H;
+  ecx.fillStyle = '#0a0a0c';
+  ecx.fillRect(0, 0, W, H);
+
+  const len = ecoFilled ? ECO_HISTORY : ecoIdx;
+  if (len < 2) return;
+
+  // Find ranges
+  let maxMass = 0.01, maxSpec = 1, maxDiv = 0.1;
+  for (let i = 0; i < len; i++) {
+    const idx = ecoFilled ? (ecoIdx + i) % ECO_HISTORY : i;
+    if (ecoMassHist[idx] > maxMass) maxMass = ecoMassHist[idx];
+    if (ecoSpeciesHist[idx] > maxSpec) maxSpec = ecoSpeciesHist[idx];
+    if (ecoDivHist[idx] > maxDiv) maxDiv = ecoDivHist[idx];
+  }
+
+  // Draw species count (copper)
+  ecx.strokeStyle = '#c49a6c';
+  ecx.lineWidth = 1.5;
+  ecx.beginPath();
+  for (let i = 0; i < len; i++) {
+    const idx = ecoFilled ? (ecoIdx + i) % ECO_HISTORY : i;
+    const x = (i / (len - 1)) * W;
+    const y = H - (ecoSpeciesHist[idx] / maxSpec) * (H * 0.45) - 2;
+    i === 0 ? ecx.moveTo(x, y) : ecx.lineTo(x, y);
+  }
+  ecx.stroke();
+
+  // Draw diversity index (teal)
+  ecx.strokeStyle = '#5a9e8f';
+  ecx.lineWidth = 1;
+  ecx.beginPath();
+  for (let i = 0; i < len; i++) {
+    const idx = ecoFilled ? (ecoIdx + i) % ECO_HISTORY : i;
+    const x = (i / (len - 1)) * W;
+    const y = H - (ecoDivHist[idx] / maxDiv) * (H * 0.45) - 2;
+    i === 0 ? ecx.moveTo(x, y) : ecx.lineTo(x, y);
+  }
+  ecx.stroke();
+
+  // Draw mass (dim amber, background)
+  ecx.strokeStyle = 'rgba(196,154,108,0.25)';
+  ecx.lineWidth = 1;
+  ecx.beginPath();
+  for (let i = 0; i < len; i++) {
+    const idx = ecoFilled ? (ecoIdx + i) % ECO_HISTORY : i;
+    const x = (i / (len - 1)) * W;
+    const y = H - (ecoMassHist[idx] / maxMass) * (H * 0.9) - 2;
+    i === 0 ? ecx.moveTo(x, y) : ecx.lineTo(x, y);
+  }
+  ecx.stroke();
+
+  // Update stats
+  const lastSpecies = ecoSpeciesHist[(ecoIdx - 1 + ECO_HISTORY) % ECO_HISTORY];
+  const lastDiv = ecoDivHist[(ecoIdx - 1 + ECO_HISTORY) % ECO_HISTORY];
+  document.getElementById('ecoStats').innerHTML =
+    `<span style=\"color:#c49a6c\">■</span> ${lastSpecies | 0} species · ` +
+    `<span style=\"color:#5a9e8f\">■</span> diversity ${lastDiv.toFixed(2)} · ` +
+    `<span style=\"color:rgba(196,154,108,0.5)\">■</span> mass`;
+}
 
 // Auto-exposure for rendering
 let exposureMax = 1.0;
@@ -528,6 +671,12 @@ function render() {
   document.getElementById('pop').textContent = 'pop ' + pop;
   document.getElementById('mass').textContent = 'mass ' + totalMass.toFixed(1);
 
+  // Ecosystem tracking (every 4th render call)
+  if (stepN % 8 === 0) {
+    recordEco();
+    renderEcoChart();
+  }
+
   // Flow magnitude diagnostic
   let maxFlow = 0;
   for (let i = 0; i < N * N; i++) {
@@ -635,6 +784,13 @@ function initPreset(name) {
   P_mu.fill(val('mg'));
   P_sg.fill(val('sg'));
   exposureMax = 1.0;
+
+  // Reset eco tracking
+  ecoMassHist.fill(0);
+  ecoSpeciesHist.fill(0);
+  ecoDivHist.fill(0);
+  ecoIdx = 0;
+  ecoFilled = false;
 
   const preset = PRESETS[name];
   if (preset) {
